@@ -1,0 +1,37 @@
+# 依存パッケージ
+/node_modules
+
+# Next.js ビルド成果物 / キャッシュ
+/.next
+/out
+/build
+next-env.d.ts
+
+# 環境変数（シークレットを含むためコミット禁止。例ファイルのみ追跡）
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Prisma のローカル SQLite DB
+prisma/dev.db
+prisma/dev.db-journal
+*.db
+*.db-journal
+
+# ログ / デバッグ
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / エディタ
+.DS_Store
+*.pem
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code の個人ローカル設定（共有しない。settings.json は追跡）
+.claude/settings.local.json
+
+# TypeScript
+*.tsbuildinfo

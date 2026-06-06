@@ -1,0 +1,34 @@
+// PlainChat 開発用 Dev Container 定義
+// パフォーマンスのため node_modules / .next はバインドマウントせず named volume に載せる
+// （macOS/Windows の Docker はバインドマウント I/O が遅く、依存解決やビルドが数倍遅くなるため）
+{
+  "name": "PlainChat",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+
+  // node_modules と .next（書き込みが激しい）をコンテナ側ボリュームに分離
+  "mounts": [
+    "source=plainchat-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
+    "source=plainchat-next-cache,target=${containerWorkspaceFolder}/.next,type=volume"
+  ],
+
+  "forwardPorts": [3000, 5555],
+  "portsAttributes": {
+    "3000": { "label": "Next.js" },
+    "5555": { "label": "Prisma Studio", "onAutoForward": "silent" }
+  },
+
+  // ボリュームの所有権修正 → npm install → .env 生成 → DB 初期化
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "remoteUser": "node",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "Prisma.prisma"
+      ]
+    }
+  }
+}

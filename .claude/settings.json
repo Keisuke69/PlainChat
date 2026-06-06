@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git check-ignore *)",
+      "Bash(sudo -n true)",
+      "Bash(git add *)",
+      "Bash(git config *)",
+      "Bash(grep -E \"\\\\.env$\")",
+      "Bash(git symbolic-ref *)",
+      "Bash(grep -E \"\\(^\\\\.env$|\\\\.env$|dev\\\\.db|node_modules/|^\\\\.next/|settings\\\\.local\\)\")"
+    ]
+  }
+}
