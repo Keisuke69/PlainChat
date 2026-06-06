@@ -55,3 +55,40 @@
 - **理由**: 単一の真実のソースでモデル差異を管理でき、非対応パラメータを UI に出さず・送らないことで API エラーと検証ノイズを防ぐ。新モデル追加はレジストリに 1 行足すだけ。
 - **代替案**: 送信時に try/catch でエラーを握りつぶす — 利用者に分かりにくく、検証の忠実性も損なう。
 - **トレードオフ**: モデルの仕様変更に追従してレジストリを更新する運用が必要。
+
+---
+
+## ADR-006: API 実行方法（トランスポート）を切替可能にし、直接経路に公式プロバイダー SDK を採用
+
+- **背景**: 本ツールの目的は「API モデルでのプロンプト挙動を忠実に検証する」こと。既定の実行経路は ADR-001 のとおり **Vercel AI SDK** だが、これは抽象化レイヤーであり、メッセージ整形・パラメータ名・プロバイダー差異の吸収など独自の正規化が挟まる。**「SDK を通さない素の API 挙動」も併せて確認したい**、また **本番（Vercel AI SDK）との差分そのものを検証したい**という要件が出た（ユーザー要望: API リクエストの実行方法を選択・設定できるようにする）。
+- **決定**: 既定の Vercel AI SDK 経路は**そのまま残し**、切替先として **「直接」経路**を追加する。直接経路は **各社の公式 SDK（`openai` / `@anthropic-ai/sdk`）でアプリ内（in-process）から API を直接呼び出す**。実行方法は `TransportId`（`'sdk'` | `'direct'`、既定 `'sdk'`）として**会話ごとに永続化**する。
+- **検討した代替案**:
+  - **(a) 生 HTTP（fetch）直叩き** — 変換層ゼロで最も忠実。ただし SSE パース・各社の認証ヘッダ/エンドポイント差異・エラー処理を自前で抱える。保守コストが高い。
+  - **(b) 公式プロバイダー SDK（採用）** — `openai` / `@anthropic-ai/sdk`。ネイティブ schema（Anthropic なら `system` + content blocks の `/v1/messages`）をほぼ素通しする薄いラッパーで、in-process・型安全。忠実度は生 HTTP に次ぐ高さ。
+  - **(c) LiteLLM** — 不採用。理由を次項に明記。
+- **理由（なぜ公式 SDK か）**:
+  - **忠実度が十分高い**: 公式 SDK はネイティブ API へほぼ素通し。Vercel AI SDK のような統一抽象を挟まないため、各社の素の挙動・応答形（`stop_reason`、`usage` の内訳等）に近い。
+  - **単一プロセス・外部依存ゼロを維持**（ADR-003 と同じ原則）: npm 依存を 2 つ足すだけで in-process 実行でき、ローカル完結。
+  - **型安全・保守性**: 生 HTTP（案 a）より SSE パースや差異吸収を SDK に任せられ、TypeScript の型が効く。忠実度との実用的なバランスとして最良。
+- **LiteLLM を採らなかった理由**:
+  - LiteLLM の本体は **Python 製 SDK と別プロセスの Proxy サーバ**。本リポジトリは TS/Next.js なので、使うなら **Proxy を外部プロセス（Docker 等）で常駐**させて HTTP 接続する形になり、**「単一プロセス・外部サービス不要・ローカル完結」（ADR-003）と衝突**する。
+  - LiteLLM は **全リクエストを OpenAI 互換形式に統一**して各社へ翻訳・逆翻訳する。Vercel AI SDK に加えて**もう一段の正規化シム**が挟まり、**忠実度はむしろ下がる**（Anthropic ネイティブの request/response が OpenAI 形に丸められる、`drop_params`/マッピング挙動という新たな変数が増える）。検証ツールの目的に逆行する。
+  - LiteLLM が活きるのは「多数プロバイダーを 1 つの統一 IF で」「キー/予算の集中管理・ログ/コスト集計」といった**ゲートウェイ用途**。本ツールの「少数プロバイダー × 忠実検証 × 外部依存ゼロ」とは方向が異なる。
+- **永続化の方針**: provider / model / systemPrompt / params と同列に **`Conversation.transport` を会話ごとに保存**。履歴を開くと実行方法も復元され、「どの経路で何を試したか」を再現できる（検証用途の肝）。会話単位の一時切替ではなく永続化を選択した。
+- **実装サマリ**:
+  - `src/lib/model-registry.ts`: `TransportId` / `TRANSPORTS` / `TRANSPORT_LABELS` / `TRANSPORT_DESCRIPTIONS` / `isTransportId()` を追加（UI 切替と送信経路の単一の真実のソース）。
+  - `src/lib/params.ts`: プロバイダー非依存の中立形 `resolveParams()` を切り出し、SDK 経路（`normalizeParams()`）と直接経路の**両方で共有**。→ **Opus 4.8/4.7 へ temperature / top_p を送らない**正規化を直接経路でも担保。
+  - `src/lib/direct.ts`（新規）: `streamDirect()` が公式 SDK のストリームを `createUIMessageStream` で **AI SDK の UI message stream プロトコルへ橋渡し**。クライアント（`useChat` + `DefaultChatTransport`）は**無改修**。assistant メッセージ + usage の保存は `/api/chat` 側の共有コールバックで実施。
+  - `prisma/schema.prisma` + マイグレーション: `Conversation.transport`（`String @default("sdk")`）を追加。
+  - UI: `src/components/TransportSelector.tsx`（ヘッダーの「実行方法」セレクタ）。
+- **検証**:
+  - `tsc --noEmit` / `npm run build`（全ルートの型検証込み）パス。
+  - マイグレーションをクリーンな SQLite に適用 → `transport` 列が `default='sdk'`、新規会話は `sdk`、明示 `direct` も永続化を確認。
+  - UI message stream のフレーミングを AI SDK 自身のリーダ（クライアントと同じ機構）で往復検証 → 復元テキスト一致。
+  - **公式 SDK の baseURL をローカルのモックプロバイダー（SSE）へ向け、本物の `streamDirect` をエンドツーエンド実行** → OpenAI / Anthropic 両経路で assistant テキスト・usage・`text-delta` の伝搬を確認（PASS）。実プロバイダーへの実呼び出しのみ API キーが必要なため未実施。
+- **トレードオフ / 結果**:
+  - 依存が 2 つ増える（`openai` / `@anthropic-ai/sdk`）。
+  - 直接経路は Vercel AI SDK の `providerOptions`（thinking/effort 等）を共有しない最小実装（テキストストリーミング + 基本 sampling）。`effort` は両経路とも現状未送信のまま。
+  - 直接経路の `usage` はプロバイダーネイティブ形（SDK 経路は AI SDK 形）。usage は現状 UI 非表示のため実害なし。
+  - 利点として、**Vercel AI SDK 経路と直接経路の差分そのもの**を同一 UI で比較検証できるようになる。
+- **関連**: ADR-001（Vercel AI SDK を既定に据える方針は不変。本 ADR はそれを覆さず、検証用の別経路を**追加**するもの）。ADR-003（外部依存ゼロ・ローカル完結の原則が LiteLLM 不採用の主因）。ADR-005（レジストリ駆動のパラメータ制御を直接経路にも適用）。
