@@ -42,6 +42,8 @@ export function ChatApp({ userName }: { userName: string }) {
   const [params, setParams] = useState<ChatParams>({
     maxTokens: DEFAULT.defaults.maxTokens,
   });
+  // supports に関わらず全パラメータを表示・送信する手動オーバーライド（検証用）。
+  const [forceAllParams, setForceAllParams] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -62,8 +64,8 @@ export function ChatApp({ userName }: { userName: string }) {
   );
 
   // 送信時の最新設定を参照するための ref
-  const settingsRef = useRef({ provider, model, transport, systemPrompt, params, currentId });
-  settingsRef.current = { provider, model, transport, systemPrompt, params, currentId };
+  const settingsRef = useRef({ provider, model, transport, systemPrompt, params, forceAllParams, currentId });
+  settingsRef.current = { provider, model, transport, systemPrompt, params, forceAllParams, currentId };
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -88,7 +90,7 @@ export function ChatApp({ userName }: { userName: string }) {
     const res = await fetch("/api/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, model, transport, systemPrompt, params }),
+      body: JSON.stringify({ provider, model, transport, systemPrompt, params, forceAllParams }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { conversation: ConversationSummary };
@@ -170,6 +172,7 @@ export function ChatApp({ userName }: { userName: string }) {
           transport,
           systemPrompt,
           params,
+          forceAllParams,
         },
       },
     );
@@ -258,8 +261,10 @@ export function ChatApp({ userName }: { userName: string }) {
               entry={entry}
               systemPrompt={systemPrompt}
               params={params}
+              forceAllParams={forceAllParams}
               onSystemPromptChange={setSystemPrompt}
               onParamsChange={setParams}
+              onForceAllParamsChange={setForceAllParams}
             />
           </div>
         </div>
