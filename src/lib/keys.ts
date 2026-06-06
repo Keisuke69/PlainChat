@@ -1,4 +1,6 @@
-import { prisma } from "./db";
+import { and, eq } from "drizzle-orm";
+import { db } from "./db";
+import { providerKey } from "./schema";
 import { decrypt } from "./crypto";
 import type { ProviderId } from "./model-registry";
 
@@ -12,8 +14,8 @@ export async function resolveApiKey(
   userId: string,
   provider: ProviderId,
 ): Promise<string | null> {
-  const row = await prisma.providerKey.findUnique({
-    where: { userId_provider: { userId, provider } },
+  const row = await db.query.providerKey.findFirst({
+    where: and(eq(providerKey.userId, userId), eq(providerKey.provider, provider)),
   });
   if (row) {
     try {
@@ -35,7 +37,9 @@ export interface ProviderKeyStatus {
 // 設定画面表示用のステータス（生キーは返さない）
 export async function getKeyStatuses(userId: string): Promise<ProviderKeyStatus[]> {
   const providers: ProviderId[] = ["openai", "anthropic"];
-  const rows = await prisma.providerKey.findMany({ where: { userId } });
+  const rows = await db.query.providerKey.findMany({
+    where: eq(providerKey.userId, userId),
+  });
   return providers.map((provider) => {
     const row = rows.find((r) => r.provider === provider);
     if (row) {

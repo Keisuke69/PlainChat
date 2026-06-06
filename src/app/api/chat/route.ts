@@ -1,6 +1,8 @@
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
+import { conversation, message } from "@/lib/schema";
 import {
   getModelEntry,
   isTransportId,
@@ -50,8 +52,8 @@ export async function POST(req: Request) {
   }
 
   // 会話の所有者チェック
-  const convo = await prisma.conversation.findFirst({
-    where: { id: conversationId, userId },
+  const convo = await db.query.conversation.findFirst({
+    where: and(eq(conversation.id, conversationId), eq(conversation.userId, userId)),
   });
   if (!convo) {
     return Response.json({ error: "会話が見つかりません" }, { status: 404 });
@@ -70,15 +72,18 @@ export async function POST(req: Request) {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   const userText = extractText(lastUser);
   if (userText) {
-    await prisma.message.create({
-      data: { conversationId, role: "user", content: userText, model },
+    await db.insert(message).values({
+      conversationId,
+      role: "user",
+      content: userText,
+      model,
     });
   }
 
-  // 会話の設定とタイトルを更新
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: {
+  // 会話の設定とタイトルを更新（updatedAt は schema の $onUpdate で自動更新）
+  await db
+    .update(conversation)
+    .set({
       provider,
       model,
       transport,
@@ -88,19 +93,17 @@ export async function POST(req: Request) {
         convo.title === "新しいチャット" && userText
           ? userText.slice(0, 40)
           : convo.title,
-    },
-  });
+    })
+    .where(eq(conversation.id, conversationId));
 
   // assistant メッセージ + usage の保存（両経路で共有）。
   const persistAssistant = async (text: string, usage: unknown) => {
-    await prisma.message.create({
-      data: {
-        conversationId,
-        role: "assistant",
-        content: text,
-        model,
-        usage: JSON.stringify(usage ?? {}),
-      },
+    await db.insert(message).values({
+      conversationId,
+      role: "assistant",
+      content: text,
+      model,
+      usage: JSON.stringify(usage ?? {}),
     });
   };
 
