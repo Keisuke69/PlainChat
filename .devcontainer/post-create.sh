@@ -11,9 +11,8 @@ npm install
 # .env が無ければランダムシークレット付きで自動生成
 node scripts/setup-env.mjs
 
-# DB 初期化（既存マイグレーションを適用 + Prisma Client 生成）
-npx prisma migrate deploy
-npx prisma generate
+# DB 初期化（既存マイグレーションを適用。Drizzle はコード生成不要）
+npm run db:migrate
 
 echo "✅ セットアップ完了。'npm run dev' で http://localhost:3000 が起動します。"
-echo "   （初期ユーザーが必要なら 'npx prisma db seed' → demo@example.com / password123）"
+echo "   （初期ユーザーが必要なら 'npm run db:seed' → demo@example.com / password123）"

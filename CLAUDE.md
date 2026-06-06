@@ -11,16 +11,17 @@ PlainChat — OpenAI / Anthropic の API モデルを切り替えて使える、
 | 用途 | コマンド |
 |---|---|
 | 開発サーバ | `npm run dev`（http://localhost:3000） |
-| 本番ビルド | `npm run build`（`prisma generate` → `next build`） |
+| 本番ビルド | `npm run build`（`next build` のみ。コード生成ステップは無し） |
 | 本番起動 | `npm run start` |
 | Lint | `npm run lint`（next lint / ESLint） |
-| マイグレーション作成・適用 | `npm run db:migrate`（`prisma migrate dev`） |
-| スキーマを DB に直接反映 | `npm run db:push` |
-| 初期ユーザー作成 | `npm run db:seed`（demo@example.com / password123） |
-| 履歴を GUI 閲覧 | `npm run db:studio`（Prisma Studio, port 5555） |
+| マイグレーション生成 | `npm run db:generate`（`drizzle-kit generate`。`src/lib/schema.ts` から SQL を生成） |
+| マイグレーション適用 | `npm run db:migrate`（`drizzle-kit migrate`） |
+| スキーマを DB に直接反映 | `npm run db:push`（`drizzle-kit push`） |
+| 初期ユーザー作成 | `npm run db:seed`（`scripts/seed.ts` / demo@example.com / password123） |
+| 履歴を GUI 閲覧 | `npm run db:studio`（Drizzle Studio, port 4983） |
 
 - テストフレームワークは未導入（`test` スクリプトは存在しない）。
-- `prisma/schema.prisma` を変更したら `npx prisma generate`（または `npm run build`）で Prisma Client を再生成すること。
+- `src/lib/schema.ts`（Drizzle スキーマ）を変更したら `npm run db:generate` で `drizzle/` にマイグレーション SQL を生成し、`npm run db:migrate` で適用する。**Prisma と違いコード生成（クライアント再生成）は不要**。
 
 ## 開発ワークフロー（Git / PR）
 
@@ -33,18 +34,18 @@ PlainChat — OpenAI / Anthropic の API モデルを切り替えて使える、
 
 ## 環境変数（`.env`）
 
-Prisma と Next の両方が `.env` を自動読込する。DevContainer 利用時は `.devcontainer/post-create.sh` → `scripts/setup-env.mjs` がランダムシークレット付きで自動生成する。手動セットアップ時は `.env.example` をコピーして埋める。
+Next が `.env` を自動読込する（Drizzle Kit は `drizzle.config.ts` で `DATABASE_URL` を参照し、未設定時は `file:./dev.db` にフォールバック）。DevContainer 利用時は `.devcontainer/post-create.sh` → `scripts/setup-env.mjs` がランダムシークレット付きで自動生成する。手動セットアップ時は `.env.example` をコピーして埋める。
 
-- `DATABASE_URL` — SQLite の場所（例 `file:./dev.db`）
+- `DATABASE_URL` — SQLite の場所（例 `file:./dev.db`）。`db.ts` / `drizzle.config.ts` が先頭の `file:` を除いて better-sqlite3 に渡す。**パスは cwd（リポジトリ直下）基準で解決**される（Prisma 時代は schema ディレクトリ基準だったため、DB は `prisma/dev.db` ではなくリポジトリ直下の `dev.db` になる）
 - `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL` — Better Auth 用
 - `ENCRYPTION_KEY` — API キー暗号化鍵。**失うと保存済み API キーは復号不能**（再登録が必要）
 - `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — 任意。UI でキー未設定時のフォールバック
 
-`.env` と `prisma/dev.db` は `.gitignore` 済み（コミット禁止）。
+`.env` と SQLite ファイル（`*.db` / `dev.db`）は `.gitignore` 済み（コミット禁止）。
 
 ## アーキテクチャの要点
 
-Next.js (App Router) の単一プロセスでフロント + API を提供。Better Auth（email/password）+ Prisma/SQLite。import エイリアス `@/*` → `src/*`。
+Next.js (App Router) の単一プロセスでフロント + API を提供。Better Auth（email/password）+ Drizzle ORM / SQLite（better-sqlite3）。import エイリアス `@/*` → `src/*`。
 
 ### 1. モデル能力レジストリが中核（最重要）
 
@@ -75,13 +76,15 @@ Next.js (App Router) の単一プロセスでフロント + API を提供。Bett
 - `src/lib/provider.ts` `buildLanguageModel()`: グローバルな SDK クライアントは持たず、**リクエストごとにユーザーのキーで** `createOpenAI` / `createAnthropic` を生成する。
 - **生キーはクライアントへ返さない**。設定画面には status + 下4桁マスクのみ返す（`getKeyStatuses`）。復号はサーバ側 Route Handler 内でのみ行う。
 
-### 4. データモデル（`prisma/schema.prisma`）
+### 4. データモデル（`src/lib/schema.ts` = Drizzle スキーマ）
 
-Better Auth 標準テーブル（User / Session / Account / Verification）+ アプリ用（Conversation / Message / ProviderKey）。**SQLite は Json 型非対応のため、`Conversation.params` と `Message.usage` は JSON 文字列として保存**（読み書きで `JSON.parse` / `JSON.stringify`）。会話ごとに provider / model / transport / systemPrompt / params を保存し、「どの設定で何を試したか」を後から再現できる（検証用途の肝）。`Conversation.transport` は API 実行方法（`'sdk'` | `'direct'`、既定 `'sdk'`）。`ProviderKey` は `(userId, provider)` でユニーク。
+Better Auth 標準テーブル（User / Session / Account / Verification）+ アプリ用（Conversation / Message / ProviderKey）。**SQLite は Json 型非対応のため、`Conversation.params` と `Message.usage` は JSON 文字列（`text`）として保存**（読み書きで `JSON.parse` / `JSON.stringify`）。会話ごとに provider / model / transport / systemPrompt / params を保存し、「どの設定で何を試したか」を後から再現できる（検証用途の肝）。`Conversation.transport` は API 実行方法（`'sdk'` | `'direct'`、既定 `'sdk'`）。`ProviderKey` は `(userId, provider)` でユニーク。
 
-### 5. Prisma クライアント（`src/lib/db.ts`）
+互換性の要点（Prisma からの移行）: **テーブル名・カラム名は Prisma 版と同一**に保ち、`DateTime` は `integer({ mode: "timestamp_ms" })`（= Prisma ネイティブ SQLite と同じ Unix エポック ms）、真偽値は `integer({ mode: "boolean" })`（0/1）で保存する。これにより既存の `dev.db` をそのまま読み書きできる。`createdAt` は `$defaultFn`、`updatedAt` は `$onUpdate`（= Prisma の `@default(now())` / `@updatedAt` 相当）、アプリ表の `id` は `randomUUID()` を `$defaultFn` で生成。マイグレーション SQL は `drizzle/` 配下（`drizzle-kit generate` が生成）。
 
-dev のホットリロードで `PrismaClient` が増殖しないよう `globalThis` に保持する標準パターン。新規にインスタンス化せず、必ずこの `prisma` を import すること。
+### 5. DB クライアント（`src/lib/db.ts`）
+
+`better-sqlite3` 接続を生成し `drizzle(sqlite, { schema })` でラップ。dev のホットリロードで接続が増殖しないよう `globalThis` に保持する。新規にインスタンス化せず、必ずこの `db` を import すること。**接続生成時に `PRAGMA foreign_keys = ON` を設定**している（better-sqlite3 は既定で外部キーを強制しないため、会話削除時のメッセージ連鎖削除など `onDelete: cascade` を効かせるのに必須）。Better Auth は `drizzleAdapter(db, { provider: "sqlite", schema: { user, session, account, verification } })` でこの `db` を共有する。
 
 ## 注意点
 

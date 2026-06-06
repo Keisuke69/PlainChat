@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Prisma をサーバ外部パッケージとして扱う（バンドル対象から除外）
-  serverExternalPackages: ["@prisma/client", "better-auth"],
+  // ネイティブモジュール / サーバ専用ライブラリをバンドル対象から除外する
+  // （better-sqlite3 は native addon のためバンドル不可）
+  serverExternalPackages: ["better-sqlite3", "better-auth"],
 };
 
 export default nextConfig;

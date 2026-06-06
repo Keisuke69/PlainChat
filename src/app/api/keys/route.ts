@@ -1,5 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
+import { providerKey } from "@/lib/schema";
 import { encrypt, last4 } from "@/lib/crypto";
 import { getKeyStatuses } from "@/lib/keys";
 import type { ProviderId } from "@/lib/model-registry";
@@ -32,19 +34,22 @@ export async function PUT(req: Request) {
   const provider = body.provider;
   const apiKey = body.apiKey.trim();
 
-  await prisma.providerKey.upsert({
-    where: { userId_provider: { userId: session.user.id, provider } },
-    create: {
+  await db
+    .insert(providerKey)
+    .values({
       userId: session.user.id,
       provider,
       encryptedKey: encrypt(apiKey),
       last4: last4(apiKey),
-    },
-    update: {
-      encryptedKey: encrypt(apiKey),
-      last4: last4(apiKey),
-    },
-  });
+    })
+    .onConflictDoUpdate({
+      target: [providerKey.userId, providerKey.provider],
+      set: {
+        encryptedKey: encrypt(apiKey),
+        last4: last4(apiKey),
+        updatedAt: new Date(),
+      },
+    });
 
   return Response.json({ ok: true, provider, last4: last4(apiKey) });
 }
@@ -59,8 +64,13 @@ export async function DELETE(req: Request) {
     return Response.json({ error: "プロバイダーが不正です" }, { status: 400 });
   }
 
-  await prisma.providerKey.deleteMany({
-    where: { userId: session.user.id, provider: body.provider },
-  });
+  await db
+    .delete(providerKey)
+    .where(
+      and(
+        eq(providerKey.userId, session.user.id),
+        eq(providerKey.provider, body.provider),
+      ),
+    );
   return Response.json({ ok: true });
 }

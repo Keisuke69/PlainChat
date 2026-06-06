@@ -11,10 +11,10 @@
     "source=plainchat-next-cache,target=${containerWorkspaceFolder}/.next,type=volume"
   ],
 
-  "forwardPorts": [3000, 5555],
+  "forwardPorts": [3000, 4983],
   "portsAttributes": {
     "3000": { "label": "Next.js" },
-    "5555": { "label": "Prisma Studio", "onAutoForward": "silent" }
+    "4983": { "label": "Drizzle Studio", "onAutoForward": "silent" }
   },
 
   // ボリュームの所有権修正 → npm install → .env 生成 → DB 初期化
@@ -26,8 +26,7 @@
     "vscode": {
       "extensions": [
         "dbaeumer.vscode-eslint",
-        "bradlc.vscode-tailwindcss",
-        "Prisma.prisma"
+        "bradlc.vscode-tailwindcss"
       ]
     }
   }

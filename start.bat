@@ -38,7 +38,7 @@ if errorlevel 1 ( echo [×] 設定ファイルの作成に失敗しました & p
 
 rem 4) データベースの準備
 echo データベースを準備中...
-call npx prisma migrate deploy >nul 2>nul
+call npm run db:migrate >nul 2>nul
 if errorlevel 1 ( echo [×] データベースの準備に失敗しました & pause & exit /b 1 )
 
 rem 5) 初回ビルド（.next が無い場合のみ・数分かかります）

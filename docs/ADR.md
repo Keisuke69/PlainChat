@@ -28,6 +28,8 @@
 
 ## ADR-003: 永続化に SQLite + Prisma を採用
 
+> **⚠️ この決定は ADR-007 により更新（ORM を Prisma → Drizzle に変更）。SQLite 採用の判断は有効。**
+
 - **背景**: 「ローカル実行」「履歴保存」が要件。外部 DB サーバは避けたい。
 - **決定**: **SQLite（単一ファイル）+ Prisma ORM**。
 - **理由**: 外部サービス不要、バックアップはファイルコピーのみ。Prisma は型安全・マイグレーション管理が容易で、Prisma Studio で履歴を GUI 閲覧できる（非エンジニアのデータ確認にも有用）。
@@ -92,3 +94,39 @@
   - 直接経路の `usage` はプロバイダーネイティブ形（SDK 経路は AI SDK 形）。usage は現状 UI 非表示のため実害なし。
   - 利点として、**Vercel AI SDK 経路と直接経路の差分そのもの**を同一 UI で比較検証できるようになる。
 - **関連**: ADR-001（Vercel AI SDK を既定に据える方針は不変。本 ADR はそれを覆さず、検証用の別経路を**追加**するもの）。ADR-003（外部依存ゼロ・ローカル完結の原則が LiteLLM 不採用の主因）。ADR-005（レジストリ駆動のパラメータ制御を直接経路にも適用）。
+
+---
+
+## ADR-007: ORM を Prisma から Drizzle ORM + better-sqlite3 へ移行
+
+- **背景**: ADR-003 で Prisma を採用していたが、本ツールは「ローカル単一マシン・SQLite・7 テーブル・小さなクエリ」という軽量用途。Prisma はビルド前の `prisma generate`（コード生成）ステップと query engine を伴い、用途に対してやや重い。ユーザー要望により、より軽量な構成へ移行する。
+- **決定**: 永続化レイヤを **Drizzle ORM + `better-sqlite3`** に置き換える（SQLite 採用は ADR-003 のまま不変）。Better Auth のアダプタも `prismaAdapter` → `drizzleAdapter` に変更。
+- **検討した代替案**:
+  - **(a) Prisma 7 へメジャーアップグレード** — Prisma 7 は Rust エンジンを撤廃し TS クライアント化されたが、コード生成ステップは残る。移行コストの割に「軽量化」の主眼は弱い。
+  - **(b) Drizzle ORM + better-sqlite3（採用）** — コード生成なし、薄い型安全レイヤ、`better-sqlite3` は同期 API でローカル SQLite に最適。Better Auth に公式 Drizzle アダプタあり。Studio（`drizzle-kit studio`）も提供。
+  - **(c) Kysely / 生 better-sqlite3** — さらに低レベル。型安全 ORM 体験と Studio を失うため不採用。
+- **理由（なぜ Drizzle か）**:
+  - **コード生成ステップ撤廃**: `build` が `next build` のみになり、スキーマ変更時のクライアント再生成が不要。
+  - **依存が軽い**: query engine バイナリ不要。`better-sqlite3` のネイティブアドオンのみ。
+  - **Better Auth と公式統合**: `drizzleAdapter` でアダプタ差し替えのみ。スキーマ（User/Session/Account/Verification）はそのまま流用。
+  - **Studio 維持**: `drizzle-kit studio`（port 4983）で履歴データの GUI 閲覧を継続できる（ADR-003 の Studio 要件を満たす）。
+- **互換性の担保（既存 `dev.db` を壊さない）**:
+  - **テーブル名・カラム名を Prisma 版と同一**に保つ（`User` / `emailVerified` / `createdAt` 等、大文字始まり・camelCase）。
+  - `DateTime` は **`integer({ mode: "timestamp_ms" })`** で保存。Prisma のネイティブ SQLite ドライバは DateTime を **Unix エポックのミリ秒(integer)** で保存するため、この表現なら**既存データをそのまま読み書きできる**。
+  - 真偽値は `integer({ mode: "boolean" })`（0/1）= Prisma の BOOLEAN と同一表現。
+  - `createdAt` は `$defaultFn(() => new Date())`、`updatedAt` は `$onUpdate(() => new Date())` で Prisma の `@default(now())` / `@updatedAt` を再現。アプリ表の `id` は `randomUUID()` を `$defaultFn` で生成（Prisma の `cuid()` 相当。既存行の cuid はそのまま有効）。
+  - **DB ファイルの位置**: Prisma は `file:./dev.db` を schema ディレクトリ基準で解決していた（`prisma/dev.db`）が、`better-sqlite3` は **cwd 基準**のため `dev.db`（リポジトリ直下）になる。既存ファイルを使い続けたい場合は `prisma/dev.db` → `./dev.db` に移動するだけ（`.env`/seed から作り直しても可。ローカル・gitignore 済みの使い捨て DB のため軽微）。
+  - **外部キーの強制**: `better-sqlite3` は既定で FK を強制しないため、接続時に `PRAGMA foreign_keys = ON` を設定し、`onDelete: cascade`（会話削除→メッセージ連鎖削除など）を Prisma 同様に効かせる。
+- **実装サマリ**:
+  - 追加: `src/lib/schema.ts`（Drizzle スキーマ）、`drizzle.config.ts`、`drizzle/`（生成マイグレーション）、`scripts/seed.ts`（旧 `prisma/seed.ts` を移設）。
+  - 変更: `src/lib/db.ts`（`better-sqlite3` + `drizzle` + FK pragma + dev シングルトン）、`src/lib/auth.ts`（`drizzleAdapter`）、`src/lib/keys.ts` と `src/app/api/**`（`prisma.*` → Drizzle クエリ）、`next.config.ts`（`serverExternalPackages` に `better-sqlite3`）、`package.json`（依存・スクリプト）、devcontainer / 起動スクリプト / ドキュメント。
+  - 削除: `prisma/`（schema・migrations・seed）、`@prisma/client` / `prisma` 依存。
+- **検証**:
+  - `tsc --noEmit` / `npm run build`（全ルートの型検証込み）パス。
+  - `drizzle-kit generate` → クリーンな SQLite に `drizzle-kit migrate` 適用 → `db:seed`（Better Auth `signUpEmail`）で User/Account 行が書けることを確認。`emailVerified=0`・`createdAt` が epoch-ms integer で保存されることを確認（Prisma 互換）。
+  - ルートのクエリパターン（会話作成 `.returning()` / メッセージ挿入 / `updatedAt` の `$onUpdate` 自動更新 / `onConflictDoUpdate` upsert / 会話削除での **cascade** によるメッセージ連鎖削除）をスモークテストで往復確認（PASS）。
+- **トレードオフ / 結果**:
+  - Prisma の宣言的スキーマ（`.prisma` DSL）と引き換えに、TS でスキーマを書く（`schema.ts`）。型と実装が同一言語に揃う利点もある。
+  - `better-sqlite3` はネイティブアドオン（プリビルド配布あり）。DevContainer（`node:22-bookworm`）にはビルド環境があり問題なし。
+  - コード生成ステップが消え、ビルドと開発ループが簡素化。
+- **関連**: ADR-003（SQLite 採用は維持し、ORM 部分のみ更新＝本 ADR が supersede）。ADR-002（Better Auth のスキーマ要件は不変。アダプタのみ差し替え）。ADR-004（`ProviderKey` の暗号化保存は不変）。

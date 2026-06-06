@@ -1,6 +1,6 @@
 import { auth } from "../src/lib/auth";
 
-// 初期ユーザーを作成する。`npx prisma db seed` で実行（.env が読み込まれる）。
+// 初期ユーザーを作成する。`npm run db:seed` で実行（.env が読み込まれる）。
 // 既にサインアップ画面からユーザーを作る場合は不要。
 async function main() {
   const email = process.env.SEED_EMAIL ?? "demo@example.com";
