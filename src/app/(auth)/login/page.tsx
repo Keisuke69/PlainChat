@@ -7,19 +7,25 @@ import { signIn, signUp } from "@/lib/auth-client";
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // アカウント作成時はパスワードの打ち間違い防止のため2回入力させ、一致を確認する。
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("パスワードが一致しません");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "signup") {
-        const res = await signUp.email({ name, email, password });
+        // 名前は入力させない。Better Auth は name 必須のため空文字を送る。
+        const res = await signUp.email({ name: "", email, password });
         if (res.error) {
           setError(res.error.message ?? "登録に失敗しました");
           return;
@@ -49,18 +55,6 @@ export default function LoginPage() {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === "signup" && (
-            <div>
-              <label className="mb-1 block text-sm font-medium">名前</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-          )}
           <div>
             <label className="mb-1 block text-sm font-medium">メールアドレス</label>
             <input
@@ -82,6 +76,21 @@ export default function LoginPage() {
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
+          {mode === "signup" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                パスワード（確認）
+              </label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+          )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -99,6 +108,7 @@ export default function LoginPage() {
           onClick={() => {
             setMode(mode === "signin" ? "signup" : "signin");
             setError(null);
+            setConfirmPassword("");
           }}
           className="mt-4 w-full text-center text-sm text-gray-500 hover:text-gray-800"
         >
