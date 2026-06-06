@@ -22,6 +22,11 @@ PlainChat — OpenAI / Anthropic の API モデルを切り替えて使える、
 - テストフレームワークは未導入（`test` スクリプトは存在しない）。
 - `prisma/schema.prisma` を変更したら `npx prisma generate`（または `npm run build`）で Prisma Client を再生成すること。
 
+## 開発ワークフロー（Git / PR）
+
+- 新機能の追加などまとまった変更に対応する際は、**`git worktree` で新しいブランチを切って作業**し、`main` に対して **Pull Request を作成**する（`main` へ直接コミットしない）。
+- 一連の作業が完了したら **コミット → プッシュ → PR 作成** まで行う。その後 **PR が `main` にマージされたことを検知したら、作業ブランチと worktree を削除**する。
+
 ## 環境変数（`.env`）
 
 Prisma と Next の両方が `.env` を自動読込する。DevContainer 利用時は `.devcontainer/post-create.sh` → `scripts/setup-env.mjs` がランダムシークレット付きで自動生成する。手動セットアップ時は `.env.example` をコピーして埋める。
