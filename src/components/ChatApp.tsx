@@ -5,13 +5,19 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import {
   MODELS,
-  getModelEntry,
+  mergeModels,
+  resolveModelEntry,
   isTransportId,
   DEFAULT_TRANSPORT,
   type ChatParams,
+  type ModelEntry,
   type ProviderId,
   type TransportId,
 } from "@/lib/model-registry";
+import {
+  loadDiscoveredModels,
+  subscribeDiscoveredModels,
+} from "@/lib/model-store";
 import { ModelSelector } from "./ModelSelector";
 import { TransportSelector } from "./TransportSelector";
 import { SettingsPanel } from "./SettingsPanel";
@@ -40,7 +46,20 @@ export function ChatApp({ userName }: { userName: string }) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [input, setInput] = useState("");
 
-  const entry = useMemo(() => getModelEntry(provider, model), [provider, model]);
+  // 設定画面で取得した最新モデル（localStorage）を静的レジストリにマージして選択肢にする。
+  const [discovered, setDiscovered] = useState<ModelEntry[]>([]);
+  useEffect(() => {
+    const sync = () => setDiscovered(loadDiscoveredModels());
+    sync();
+    return subscribeDiscoveredModels(sync);
+  }, []);
+  const models = useMemo(() => mergeModels(discovered), [discovered]);
+
+  // 選択中モデルの能力定義。取得モデル（静的レジストリに無い）も推定で解決する。
+  const entry = useMemo(
+    () => resolveModelEntry(provider, model),
+    [provider, model],
+  );
 
   // 送信時の最新設定を参照するための ref
   const settingsRef = useRef({ provider, model, transport, systemPrompt, params, currentId });
@@ -175,6 +194,7 @@ export function ChatApp({ userName }: { userName: string }) {
           <ModelSelector
             provider={provider}
             model={model}
+            models={models}
             onChange={(p, m) => {
               setProvider(p);
               setModel(m);

@@ -4,8 +4,9 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { conversation, message } from "@/lib/schema";
 import {
-  getModelEntry,
+  resolveModelEntry,
   isTransportId,
+  PROVIDERS,
   type ChatParams,
   type ProviderId,
   type TransportId,
@@ -46,10 +47,11 @@ export async function POST(req: Request) {
   const { messages, conversationId, provider, model, systemPrompt, params } = body;
   const transport: TransportId = isTransportId(body.transport) ? body.transport : "sdk";
 
-  const entry = getModelEntry(provider, model);
-  if (!entry) {
+  // provider が既知なら、取得済み（静的レジストリに無い最新）モデルも推定 supports で解決する。
+  if (!(PROVIDERS as string[]).includes(provider) || !model) {
     return Response.json({ error: "未知のモデルです" }, { status: 400 });
   }
+  const entry = resolveModelEntry(provider, model);
 
   // 会話の所有者チェック
   const convo = await db.query.conversation.findFirst({
