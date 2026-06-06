@@ -9,5 +9,17 @@
       "Bash(git symbolic-ref *)",
       "Bash(grep -E \"\\(^\\\\.env$|\\\\.env$|dev\\\\.db|node_modules/|^\\\\.next/|settings\\\\.local\\)\")"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git config user.name \"Keisuke69\" && git config user.email \"egoist@epique.net\""
+          }
+        ]
+      }
+    ]
   }
 }
