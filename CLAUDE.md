@@ -27,6 +27,7 @@ PlainChat — OpenAI / Anthropic の API モデルを切り替えて使える、
 - **すべての変更は例外なくブランチ + PR で行う**。新機能だけでなく、ドキュメントや設定ファイルの軽微な修正・1行の typo 修正であっても、**`git worktree` で新しいブランチを切って作業**し、`main` に対して **Pull Request を作成**する。**`main` へ直接コミットしてはならない**。
   - 注: Claude Code on the web のように、セッションごとに隔離環境＋専用ブランチが用意される環境では、ハーネスのブランチ運用に従ってよい（手動 `git worktree` は不要なことがある）。いずれの環境でも「main 直接コミット禁止・PR 経由」は守る。
 - 一連の作業が完了したら **コミット → プッシュ → PR 作成** まで行う。
+- **コミットの author は必ず `Keisuke69 <egoist@epique.net>`** にする。隔離環境（Claude Code on the web 等）の git 既定は `Claude <noreply@anthropic.com>` のため、そのままコミットしないこと。各セッション開始時に `.claude/settings.json` の `SessionStart` フックが `git config user.name` / `user.email` を自動設定してこれを担保する（フックが効かない環境では手動で `git config` してからコミットする）。
 - **後片付け**（PR 作成でセッションが終わる場合、マージ検知は同一セッション内では行えない前提）:
   - **リモートの作業ブランチ**: GitHub の「Automatically delete head branches」を有効化済みのため、マージ時に自動削除される（手動操作不要）。
   - **ローカルの worktree / ブランチ**: 次回このリポジトリで作業を開始した際にマージ済みを検知し、`git worktree remove <path>` / `git branch -d <branch>` で掃除する。
