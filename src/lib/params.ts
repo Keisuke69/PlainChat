@@ -7,6 +7,8 @@ export interface ResolvedParams {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  seed?: number;
+  topK?: number;
 }
 
 export function resolveParams(entry: ModelEntry, raw: ChatParams | undefined): ResolvedParams {
@@ -21,6 +23,12 @@ export function resolveParams(entry: ModelEntry, raw: ChatParams | undefined): R
   if (entry.supports.maxTokens && typeof p.maxTokens === "number") {
     out.maxTokens = p.maxTokens;
   }
+  if (entry.supports.seed && typeof p.seed === "number") {
+    out.seed = p.seed;
+  }
+  if (entry.supports.topK && typeof p.topK === "number") {
+    out.topK = p.topK;
+  }
   // effort は UI 表示のみ（現状どちらの経路でも未送信）。将来 providerOptions 等で対応予定。
   return out;
 }
@@ -30,6 +38,8 @@ export interface NormalizedParams {
   temperature?: number;
   topP?: number;
   maxOutputTokens?: number;
+  seed?: number;
+  topK?: number;
 }
 
 export function normalizeParams(entry: ModelEntry, raw: ChatParams | undefined): NormalizedParams {
@@ -38,5 +48,7 @@ export function normalizeParams(entry: ModelEntry, raw: ChatParams | undefined):
   if (r.temperature !== undefined) out.temperature = r.temperature;
   if (r.topP !== undefined) out.topP = r.topP;
   if (r.maxTokens !== undefined) out.maxOutputTokens = r.maxTokens;
+  if (r.seed !== undefined) out.seed = r.seed;
+  if (r.topK !== undefined) out.topK = r.topK;
   return out;
 }

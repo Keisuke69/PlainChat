@@ -37,6 +37,10 @@ export interface ModelEntry {
     temperature: boolean;
     topP: boolean;
     maxTokens: boolean;
+    /** OpenAI の seed（再現性）を出すか */
+    seed: boolean;
+    /** Anthropic の top_k を出すか */
+    topK: boolean;
     /** Anthropic 4.x 系の effort 切替を UI に出すか（送信は将来対応） */
     thinkingEffort: boolean;
   };
@@ -58,14 +62,14 @@ export const MODELS: ModelEntry[] = [
     provider: "openai",
     id: "gpt-4o",
     label: "GPT-4o",
-    supports: { temperature: true, topP: true, maxTokens: true, thinkingEffort: false },
+    supports: { temperature: true, topP: true, maxTokens: true, seed: true, topK: false, thinkingEffort: false },
     defaults: { maxTokens: 2048, temperature: 1, topP: 1 },
   },
   {
     provider: "openai",
     id: "gpt-4.1",
     label: "GPT-4.1",
-    supports: { temperature: true, topP: true, maxTokens: true, thinkingEffort: false },
+    supports: { temperature: true, topP: true, maxTokens: true, seed: true, topK: false, thinkingEffort: false },
     defaults: { maxTokens: 2048, temperature: 1, topP: 1 },
   },
   // ----- Anthropic -----
@@ -74,21 +78,21 @@ export const MODELS: ModelEntry[] = [
     provider: "anthropic",
     id: "claude-opus-4-8",
     label: "Claude Opus 4.8",
-    supports: { temperature: false, topP: false, maxTokens: true, thinkingEffort: true },
+    supports: { temperature: false, topP: false, maxTokens: true, seed: false, topK: false, thinkingEffort: true },
     defaults: { maxTokens: 2048 },
   },
   {
     provider: "anthropic",
     id: "claude-sonnet-4-6",
     label: "Claude Sonnet 4.6",
-    supports: { temperature: true, topP: true, maxTokens: true, thinkingEffort: true },
+    supports: { temperature: true, topP: true, maxTokens: true, seed: false, topK: true, thinkingEffort: true },
     defaults: { maxTokens: 2048, temperature: 1 },
   },
   {
     provider: "anthropic",
     id: "claude-haiku-4-5",
     label: "Claude Haiku 4.5",
-    supports: { temperature: true, topP: true, maxTokens: true, thinkingEffort: false },
+    supports: { temperature: true, topP: true, maxTokens: true, seed: false, topK: true, thinkingEffort: false },
     defaults: { maxTokens: 2048, temperature: 1 },
   },
 ];
@@ -108,9 +112,11 @@ export function listModelsByProvider(provider: ProviderId): ModelEntry[] {
 // 「UI に出すコントロール」と「実際に送るパラメータ」を必ず一致させる。
 // 既知モデルは MODELS の精密な定義が常に優先される（resolveModelEntry 参照）。
 
+// 未知モデルは「表示優先」: 明確に非対応な denylist だけ sampling を隠し、
+// それ以外は代表的パラメータを出す（取得した最新モデルで触れなくなるのを防ぐ）。
 function inferSupports(provider: ProviderId, id: string): ModelEntry["supports"] {
   if (provider === "anthropic") {
-    // Opus 4.8 / 4.7 は sampling 系（temperature / top_p）を撤廃済み → 送ると 400。
+    // Opus 4.8 / 4.7 は sampling 系（temperature / top_p / top_k）を撤廃済み → 送ると 400。
     const noSampling = /opus-4-[78]/.test(id);
     // Claude 4.x 系（opus / sonnet）は thinking effort を持つ。
     const hasEffort = /(opus|sonnet)-4-\d/.test(id);
@@ -118,15 +124,20 @@ function inferSupports(provider: ProviderId, id: string): ModelEntry["supports"]
       temperature: !noSampling,
       topP: !noSampling,
       maxTokens: true,
+      seed: false,
+      topK: !noSampling,
       thinkingEffort: hasEffort,
     };
   }
-  // OpenAI: o 系・gpt-5 系などの推論モデルは temperature / top_p を受け付けない。
-  const isReasoning = /^o\d/.test(id) || /^gpt-5/.test(id);
+  // OpenAI: o 系の推論モデルのみ temperature / top_p を受け付けない。
+  // gpt-5 系は sampling 可（denylist から外す）。
+  const isReasoning = /^o\d/.test(id);
   return {
     temperature: !isReasoning,
     topP: !isReasoning,
     maxTokens: true,
+    seed: true,
+    topK: false,
     thinkingEffort: false,
   };
 }
@@ -173,5 +184,7 @@ export interface ChatParams {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  seed?: number;
+  topK?: number;
   effort?: "low" | "medium" | "high" | "xhigh" | "max";
 }

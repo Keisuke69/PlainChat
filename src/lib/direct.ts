@@ -77,6 +77,7 @@ async function* openaiStream(opts: StreamDirectOptions): AsyncGenerator<DirectCh
     ...(r.temperature !== undefined ? { temperature: r.temperature } : {}),
     ...(r.topP !== undefined ? { top_p: r.topP } : {}),
     ...(r.maxTokens !== undefined ? { max_tokens: r.maxTokens } : {}),
+    ...(r.seed !== undefined ? { seed: r.seed } : {}),
   };
 
   const stream = await client.chat.completions.create(body);
@@ -103,6 +104,7 @@ async function* anthropicStream(opts: StreamDirectOptions): AsyncGenerator<Direc
     ...(systemPrompt && systemPrompt.length > 0 ? { system: systemPrompt } : {}),
     ...(r.temperature !== undefined ? { temperature: r.temperature } : {}),
     ...(r.topP !== undefined ? { top_p: r.topP } : {}),
+    ...(r.topK !== undefined ? { top_k: r.topK } : {}),
   };
 
   const stream = await client.messages.create(body);

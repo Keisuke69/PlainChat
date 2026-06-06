@@ -26,6 +26,8 @@ interface ChatBody {
   transport?: TransportId;
   systemPrompt?: string;
   params?: ChatParams;
+  /** supports に関わらず全パラメータを送る（検証用の手動オーバーライド）。 */
+  forceAllParams?: boolean;
 }
 
 function extractText(message: UIMessage | undefined): string {
@@ -52,6 +54,21 @@ export async function POST(req: Request) {
     return Response.json({ error: "未知のモデルです" }, { status: 400 });
   }
   const entry = resolveModelEntry(provider, model);
+  // 「全パラメータを表示」トグル ON のときは supports を全 true に上書きし、
+  // resolveParams の gate をバイパスして UI で入力した値をそのまま送る（SDK / direct 両経路共通）。
+  const effectiveEntry = body.forceAllParams
+    ? {
+        ...entry,
+        supports: {
+          temperature: true,
+          topP: true,
+          maxTokens: true,
+          seed: true,
+          topK: true,
+          thinkingEffort: true,
+        },
+      }
+    : entry;
 
   // 会話の所有者チェック
   const convo = await db.query.conversation.findFirst({
@@ -112,7 +129,7 @@ export async function POST(req: Request) {
   // 直接経路: 各社の公式 SDK で API を直接呼ぶ（Vercel AI SDK は介さない）。
   if (transport === "direct") {
     return streamDirect({
-      entry,
+      entry: effectiveEntry,
       apiKey,
       systemPrompt,
       messages,
@@ -128,7 +145,7 @@ export async function POST(req: Request) {
     model: languageModel,
     system: systemPrompt && systemPrompt.length > 0 ? systemPrompt : undefined,
     messages: convertToModelMessages(messages),
-    ...normalizeParams(entry, params),
+    ...normalizeParams(effectiveEntry, params),
     onFinish: async ({ text, usage }) => {
       await persistAssistant(text, usage);
     },
