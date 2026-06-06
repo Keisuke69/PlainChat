@@ -51,15 +51,22 @@ Next.js (App Router) の単一プロセスでフロント + API を提供。Bett
 `src/lib/model-registry.ts` が**単一の真実のソース**。各モデルの `supports`（`temperature` / `topP` / `maxTokens` / `thinkingEffort`）を宣言し、これが次の両方を駆動する:
 
 - **UI**: `ModelSelector` / `SettingsPanel` が、そのモデルで有効なコントロールだけを表示
-- **送信**: `src/lib/params.ts` の `normalizeParams()` が、`streamText` へ渡す前に**非対応パラメータを除去**
+- **送信**: `src/lib/params.ts` の `resolveParams()`（プロバイダー非依存の中立形）が**非対応パラメータを除去**。SDK 経路は `normalizeParams()` で `streamText` 形へ、直接経路（`src/lib/direct.ts`）は各社 SDK のパラメータ名へ写像する。→ **どちらの実行方法でも同じレジストリ定義で正規化される**
 
 理由: **Claude Opus 4.8 / 4.7 は temperature / top_p / top_k を送ると 400 エラー**になる（sampling 系が撤廃済み）。レジストリで非対応 param を「UI に出さない・API に送らない」ことで、API エラーと検証ノイズを防ぐ。→ **モデル追加 = `MODELS` 配列に 1 エントリ足すだけ**。`supports` の正確さがそのまま API 互換性に直結する。
+
+レジストリは実行方法（トランスポート）の定義も保持する: `TransportId`（`sdk` | `direct`）・`TRANSPORTS`・`TRANSPORT_LABELS`・`isTransportId()`。UI 切替と送信経路の両方をここから駆動する。
 
 注意: `effort`（Anthropic 4.x 系）は現状**UI 表示のみで SDK へは未送信**（`params.ts` のコメント参照。将来 `providerOptions` 経由で対応予定）。
 
 ### 2. チャットリクエストフロー（`src/app/api/chat/route.ts`）
 
-`POST` で順に: セッション検証（Better Auth）→ 会話の所有者チェック → API キー解決 → 末尾の user メッセージを保存 → 会話の provider/model/systemPrompt/params とタイトルを更新 → `buildLanguageModel` でユーザーのキーから**都度プロバイダーを生成** → `streamText`（`normalizeParams` 適用）→ `toUIMessageStreamResponse()` でストリーミング → `onFinish` で assistant メッセージ + usage を保存。会話タイトルは最初の user メッセージ先頭 40 文字から自動生成。
+`POST` で順に: セッション検証（Better Auth）→ 会話の所有者チェック → API キー解決 → 末尾の user メッセージを保存 → 会話の provider/model/**transport**/systemPrompt/params とタイトルを更新 → **`transport` で実行方法を分岐**:
+
+- **`sdk`（既定）**: `buildLanguageModel` でユーザーのキーから**都度プロバイダーを生成** → `streamText`（`normalizeParams` 適用）→ `toUIMessageStreamResponse()`。
+- **`direct`**: `src/lib/direct.ts` の `streamDirect()` が `openai` / `@anthropic-ai/sdk` で **API を直接呼び出し**、出力を `createUIMessageStream` で **UI message stream プロトコルへ橋渡し**（クライアントの `useChat` は無改修）。
+
+どちらも `onFinish`（直接経路は共有コールバック `persistAssistant`）で assistant メッセージ + usage を保存。会話タイトルは最初の user メッセージ先頭 40 文字から自動生成。
 
 ### 3. API キー管理（ユーザー単位 + at rest 暗号化）
 
@@ -70,7 +77,7 @@ Next.js (App Router) の単一プロセスでフロント + API を提供。Bett
 
 ### 4. データモデル（`prisma/schema.prisma`）
 
-Better Auth 標準テーブル（User / Session / Account / Verification）+ アプリ用（Conversation / Message / ProviderKey）。**SQLite は Json 型非対応のため、`Conversation.params` と `Message.usage` は JSON 文字列として保存**（読み書きで `JSON.parse` / `JSON.stringify`）。会話ごとに provider / model / systemPrompt / params を保存し、「どの設定で何を試したか」を後から再現できる（検証用途の肝）。`ProviderKey` は `(userId, provider)` でユニーク。
+Better Auth 標準テーブル（User / Session / Account / Verification）+ アプリ用（Conversation / Message / ProviderKey）。**SQLite は Json 型非対応のため、`Conversation.params` と `Message.usage` は JSON 文字列として保存**（読み書きで `JSON.parse` / `JSON.stringify`）。会話ごとに provider / model / transport / systemPrompt / params を保存し、「どの設定で何を試したか」を後から再現できる（検証用途の肝）。`Conversation.transport` は API 実行方法（`'sdk'` | `'direct'`、既定 `'sdk'`）。`ProviderKey` は `(userId, provider)` でユニーク。
 
 ### 5. Prisma クライアント（`src/lib/db.ts`）
 

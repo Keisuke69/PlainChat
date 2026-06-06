@@ -1,9 +1,16 @@
 import { streamText, convertToModelMessages, type UIMessage } from "ai";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getModelEntry, type ChatParams, type ProviderId } from "@/lib/model-registry";
+import {
+  getModelEntry,
+  isTransportId,
+  type ChatParams,
+  type ProviderId,
+  type TransportId,
+} from "@/lib/model-registry";
 import { normalizeParams } from "@/lib/params";
 import { buildLanguageModel } from "@/lib/provider";
+import { streamDirect } from "@/lib/direct";
 import { resolveApiKey } from "@/lib/keys";
 
 export const runtime = "nodejs";
@@ -13,6 +20,7 @@ interface ChatBody {
   conversationId: string;
   provider: ProviderId;
   model: string;
+  transport?: TransportId;
   systemPrompt?: string;
   params?: ChatParams;
 }
@@ -34,6 +42,7 @@ export async function POST(req: Request) {
 
   const body = (await req.json()) as ChatBody;
   const { messages, conversationId, provider, model, systemPrompt, params } = body;
+  const transport: TransportId = isTransportId(body.transport) ? body.transport : "sdk";
 
   const entry = getModelEntry(provider, model);
   if (!entry) {
@@ -72,6 +81,7 @@ export async function POST(req: Request) {
     data: {
       provider,
       model,
+      transport,
       systemPrompt: systemPrompt ?? "",
       params: JSON.stringify(params ?? {}),
       title:
@@ -81,6 +91,32 @@ export async function POST(req: Request) {
     },
   });
 
+  // assistant メッセージ + usage の保存（両経路で共有）。
+  const persistAssistant = async (text: string, usage: unknown) => {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        role: "assistant",
+        content: text,
+        model,
+        usage: JSON.stringify(usage ?? {}),
+      },
+    });
+  };
+
+  // 直接経路: 各社の公式 SDK で API を直接呼ぶ（Vercel AI SDK は介さない）。
+  if (transport === "direct") {
+    return streamDirect({
+      entry,
+      apiKey,
+      systemPrompt,
+      messages,
+      params,
+      onFinish: ({ text, usage }) => persistAssistant(text, usage),
+    });
+  }
+
+  // SDK 経路（既定）: Vercel AI SDK の streamText を使う。
   const languageModel = buildLanguageModel(provider, model, apiKey);
 
   const result = streamText({
@@ -89,15 +125,7 @@ export async function POST(req: Request) {
     messages: convertToModelMessages(messages),
     ...normalizeParams(entry, params),
     onFinish: async ({ text, usage }) => {
-      await prisma.message.create({
-        data: {
-          conversationId,
-          role: "assistant",
-          content: text,
-          model,
-          usage: JSON.stringify(usage ?? {}),
-        },
-      });
+      await persistAssistant(text, usage);
     },
   });
 
