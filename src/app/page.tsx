@@ -9,5 +9,6 @@ export default async function HomePage() {
     redirect("/login");
   }
 
-  return <ChatApp userName={session.user.name ?? session.user.email} />;
+  // 名前は未入力（空文字）のことがあるため、空ならメールアドレスを表示名にする。
+  return <ChatApp userName={session.user.name || session.user.email} />;
 }
