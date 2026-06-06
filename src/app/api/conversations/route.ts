@@ -22,6 +22,7 @@ export async function POST(req: Request) {
   const body = (await req.json()) as {
     provider: string;
     model: string;
+    transport?: string;
     systemPrompt?: string;
     params?: unknown;
   };
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
       userId: session.user.id,
       provider: body.provider,
       model: body.model,
+      transport: body.transport === "direct" ? "direct" : "sdk",
       systemPrompt: body.systemPrompt ?? "",
       params: JSON.stringify(body.params ?? {}),
     },

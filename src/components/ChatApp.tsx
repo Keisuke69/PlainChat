@@ -6,10 +6,14 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import {
   MODELS,
   getModelEntry,
+  isTransportId,
+  DEFAULT_TRANSPORT,
   type ChatParams,
   type ProviderId,
+  type TransportId,
 } from "@/lib/model-registry";
 import { ModelSelector } from "./ModelSelector";
+import { TransportSelector } from "./TransportSelector";
 import { SettingsPanel } from "./SettingsPanel";
 import {
   ConversationSidebar,
@@ -27,6 +31,7 @@ interface DbMessage {
 export function ChatApp({ userName }: { userName: string }) {
   const [provider, setProvider] = useState<ProviderId>(DEFAULT.provider);
   const [model, setModel] = useState<string>(DEFAULT.id);
+  const [transport, setTransport] = useState<TransportId>(DEFAULT_TRANSPORT);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [params, setParams] = useState<ChatParams>({
     maxTokens: DEFAULT.defaults.maxTokens,
@@ -37,9 +42,9 @@ export function ChatApp({ userName }: { userName: string }) {
 
   const entry = useMemo(() => getModelEntry(provider, model), [provider, model]);
 
-  // 送信時の最新設定を参照するための ref（transport の body に渡す）
-  const settingsRef = useRef({ provider, model, systemPrompt, params, currentId });
-  settingsRef.current = { provider, model, systemPrompt, params, currentId };
+  // 送信時の最新設定を参照するための ref
+  const settingsRef = useRef({ provider, model, transport, systemPrompt, params, currentId });
+  settingsRef.current = { provider, model, transport, systemPrompt, params, currentId };
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -64,7 +69,7 @@ export function ChatApp({ userName }: { userName: string }) {
     const res = await fetch("/api/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, model, systemPrompt, params }),
+      body: JSON.stringify({ provider, model, transport, systemPrompt, params }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { conversation: ConversationSummary };
@@ -86,6 +91,7 @@ export function ChatApp({ userName }: { userName: string }) {
         id: string;
         provider: string;
         model: string;
+        transport: string;
         systemPrompt: string;
         params: string;
         messages: DbMessage[];
@@ -94,6 +100,7 @@ export function ChatApp({ userName }: { userName: string }) {
     const c = data.conversation;
     setProvider(c.provider as ProviderId);
     setModel(c.model);
+    setTransport(isTransportId(c.transport) ? c.transport : DEFAULT_TRANSPORT);
     setSystemPrompt(c.systemPrompt);
     try {
       setParams(JSON.parse(c.params) as ChatParams);
@@ -141,6 +148,7 @@ export function ChatApp({ userName }: { userName: string }) {
           conversationId: convId,
           provider,
           model,
+          transport,
           systemPrompt,
           params,
         },
@@ -162,7 +170,7 @@ export function ChatApp({ userName }: { userName: string }) {
       />
 
       <main className="flex flex-1 flex-col">
-        {/* ヘッダー: モデル選択 */}
+        {/* ヘッダー: モデル選択 + API 実行方法の切替 */}
         <header className="flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
           <ModelSelector
             provider={provider}
@@ -172,6 +180,8 @@ export function ChatApp({ userName }: { userName: string }) {
               setModel(m);
             }}
           />
+          <span className="h-5 w-px bg-gray-200" aria-hidden />
+          <TransportSelector transport={transport} onChange={setTransport} />
         </header>
 
         <div className="flex flex-1 overflow-hidden">

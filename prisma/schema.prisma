@@ -74,6 +74,7 @@ model Conversation {
   title        String    @default("新しいチャット")
   provider     String
   model        String
+  transport    String    @default("sdk") // API 実行方法: 'sdk'(Vercel AI SDK) | 'direct'(プロバイダー公式SDK)
   systemPrompt String    @default("")
   params       String    @default("{}") // JSON 文字列（SQLite の Json 非対応のため）
   createdAt    DateTime  @default(now())

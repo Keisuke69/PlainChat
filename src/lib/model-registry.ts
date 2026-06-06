@@ -4,6 +4,31 @@
 
 export type ProviderId = "openai" | "anthropic";
 
+// API リクエストの実行方法（トランスポート）。
+// - sdk:    Vercel AI SDK（streamText）経由。本番プロダクトと同じ経路（既定）。
+// - direct: 各社の公式 SDK（openai / @anthropic-ai/sdk）で API を直接呼ぶ経路。
+//           SDK の抽象化を挟まず、API の素の挙動をより忠実に検証したいとき用。
+export type TransportId = "sdk" | "direct";
+
+export const TRANSPORTS: TransportId[] = ["sdk", "direct"];
+
+export const TRANSPORT_LABELS: Record<TransportId, string> = {
+  sdk: "Vercel AI SDK",
+  direct: "プロバイダー公式SDK（直接）",
+};
+
+// UI のヘルプ表示用の補足説明。
+export const TRANSPORT_DESCRIPTIONS: Record<TransportId, string> = {
+  sdk: "本番プロダクトと同じ Vercel AI SDK 経由。",
+  direct: "openai / @anthropic-ai/sdk で各社 API を直接呼び出す。",
+};
+
+export const DEFAULT_TRANSPORT: TransportId = "sdk";
+
+export function isTransportId(value: unknown): value is TransportId {
+  return value === "sdk" || value === "direct";
+}
+
 export interface ModelEntry {
   provider: ProviderId;
   id: string;
