@@ -1,22 +1,23 @@
 "use client";
 
 import {
-  MODELS,
   PROVIDERS,
   PROVIDER_LABELS,
-  listModelsByProvider,
+  type ModelEntry,
   type ProviderId,
 } from "@/lib/model-registry";
 
 interface Props {
   provider: ProviderId;
   model: string;
+  // 選択肢に出すモデル一覧（静的レジストリ + 取得済みモデルをマージしたもの）。
+  models: ModelEntry[];
   onChange: (provider: ProviderId, model: string) => void;
 }
 
-export function ModelSelector({ provider, model, onChange }: Props) {
+export function ModelSelector({ provider, model, models, onChange }: Props) {
   function handleProvider(next: ProviderId) {
-    const first = listModelsByProvider(next)[0];
+    const first = models.find((m) => m.provider === next);
     onChange(next, first ? first.id : model);
   }
 
@@ -38,11 +39,13 @@ export function ModelSelector({ provider, model, onChange }: Props) {
         onChange={(e) => onChange(provider, e.target.value)}
         className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm"
       >
-        {MODELS.filter((m) => m.provider === provider).map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label}
-          </option>
-        ))}
+        {models
+          .filter((m) => m.provider === provider)
+          .map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
       </select>
     </div>
   );

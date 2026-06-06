@@ -101,6 +101,72 @@ export function listModelsByProvider(provider: ProviderId): ModelEntry[] {
   return MODELS.filter((m) => m.provider === provider);
 }
 
+// ----- 動的に取得したモデルの能力推定 -----
+// 設定画面の「利用可能なモデル一覧を更新する」で各社 API から取得したモデルは、
+// 静的レジストリ（MODELS）に無いため supports が不明。ここで id から能力を推定する。
+// クライアント（UI 表示）とサーバ（送信パラメータ正規化・chat route）が同じ関数を使うことで、
+// 「UI に出すコントロール」と「実際に送るパラメータ」を必ず一致させる。
+// 既知モデルは MODELS の精密な定義が常に優先される（resolveModelEntry 参照）。
+
+function inferSupports(provider: ProviderId, id: string): ModelEntry["supports"] {
+  if (provider === "anthropic") {
+    // Opus 4.8 / 4.7 は sampling 系（temperature / top_p）を撤廃済み → 送ると 400。
+    const noSampling = /opus-4-[78]/.test(id);
+    // Claude 4.x 系（opus / sonnet）は thinking effort を持つ。
+    const hasEffort = /(opus|sonnet)-4-\d/.test(id);
+    return {
+      temperature: !noSampling,
+      topP: !noSampling,
+      maxTokens: true,
+      thinkingEffort: hasEffort,
+    };
+  }
+  // OpenAI: o 系・gpt-5 系などの推論モデルは temperature / top_p を受け付けない。
+  const isReasoning = /^o\d/.test(id) || /^gpt-5/.test(id);
+  return {
+    temperature: !isReasoning,
+    topP: !isReasoning,
+    maxTokens: true,
+    thinkingEffort: false,
+  };
+}
+
+// id とラベルから ModelEntry を構築（取得モデル用）。supports は推定値。
+export function buildModelEntry(
+  provider: ProviderId,
+  id: string,
+  label?: string,
+): ModelEntry {
+  const supports = inferSupports(provider, id);
+  return {
+    provider,
+    id,
+    label: label && label.length > 0 ? label : id,
+    supports,
+    defaults: {
+      maxTokens: 2048,
+      ...(supports.temperature ? { temperature: 1 } : {}),
+    },
+  };
+}
+
+// モデル定義の解決: 静的レジストリ優先、無ければ id から推定したエントリを返す。
+// chat route はこれで動的取得モデルも扱える（未知 = 即 400 にしない）。
+export function resolveModelEntry(provider: string, id: string): ModelEntry {
+  const known = getModelEntry(provider, id);
+  if (known) return known;
+  return buildModelEntry(provider as ProviderId, id);
+}
+
+// 静的レジストリと取得済みモデルをマージ（UI のプルダウン用）。
+// 同一 (provider, id) は静的レジストリの精密な定義を優先する。
+export function mergeModels(discovered: ModelEntry[]): ModelEntry[] {
+  const byKey = new Map<string, ModelEntry>();
+  for (const m of discovered) byKey.set(`${m.provider}:${m.id}`, m);
+  for (const m of MODELS) byKey.set(`${m.provider}:${m.id}`, m);
+  return [...byKey.values()];
+}
+
 export const PROVIDERS: ProviderId[] = ["openai", "anthropic"];
 
 export interface ChatParams {
